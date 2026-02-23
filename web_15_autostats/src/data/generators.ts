@@ -7,11 +7,13 @@ import type {
   CandleDataPoint,
   Delegation,
   Extrinsic,
+  MockTransactionResult,
   PriceDataPoint,
   Subnet,
   SubnetWithTrend,
   TransactionWithMethod,
   Transfer,
+  TransferWithExtrinsicId,
   Validator,
   ValidatorSubnetPerformance,
   ValidatorWithTrend,
@@ -909,4 +911,46 @@ export function generateBlocksWithDetails(
   }
 
   return blocks;
+}
+
+/**
+ * Generate a deterministic wallet address based on seed and wallet name
+ */
+export function generateWalletAddress(seed: number, walletName: string): string {
+  let nameHash = 0;
+  for (let i = 0; i < walletName.length; i++) {
+    nameHash = (nameHash * 31 + walletName.charCodeAt(i)) | 0;
+  }
+  const rng = seedRandom(seed + Math.abs(nameHash));
+  return generateSeededAddress(rng);
+}
+
+/**
+ * Generate a deterministic wallet balance based on seed
+ */
+export function generateWalletBalance(seed: number): number {
+  const rng = seedRandom(seed + 8888);
+  return 100 + rng() * 50000;
+}
+
+/**
+ * Generate a mock transaction result for the transfer page
+ */
+export function generateMockTransaction(
+  seed: number,
+  from: string,
+  to: string,
+  amount: number,
+): MockTransactionResult {
+  const rng = seedRandom(seed + Date.now());
+  return {
+    hash: generateSeededHash(rng),
+    from,
+    to,
+    amount,
+    fee: 0.01,
+    blockNumber: 1000000 + Math.floor(rng() * 500000),
+    timestamp: new Date(),
+    status: "success",
+  };
 }
