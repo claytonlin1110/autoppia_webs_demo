@@ -12,6 +12,7 @@ import { HomeDashboard } from "@/components/HomeDashboard";
 import { MemberSidebar } from "@/components/MemberSidebar";
 import { ServerList } from "@/components/ServerList";
 import { ServerSettingsModal } from "@/components/ServerSettingsModal";
+import { SavedViewsPanel, type SavedView } from "@/components/SavedViewsPanel";
 import { VoiceChannelPanel } from "@/components/VoiceChannelPanel";
 import { CURRENT_USER } from "@/constants/mock";
 import { useDynamicSystem } from "@/dynamic";
@@ -38,6 +39,8 @@ function pickDefaultChannel(channels: Channel[]): string | null {
 function nextId(): string {
   return `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
+
+const SAVED_VIEWS_KEY = "autodiscord-saved-views-v1";
 
 function normalizeChannelParam(raw: string | null): string | null {
   if (!raw) return null;
@@ -91,6 +94,7 @@ export default function DiscordPage() {
   );
   const [voiceChannelId, setVoiceChannelId] = useState<string | null>(null);
   const [voiceMuted, setVoiceMuted] = useState(false);
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
 
   const allServers = useMemo(
     () => [...(data?.servers ?? []), ...localServers],
@@ -235,6 +239,18 @@ export default function DiscordPage() {
       allServers.find((s) => s.id === serverId)?.name ?? serverId,
     [allServers],
   );
+  const getChannelName = useCallback(
+    (channelId: string | null) =>
+      channelId
+        ? allChannelsForLookup.find((c) => c.id === channelId)?.name ?? channelId
+        : "None",
+    [allChannelsForLookup],
+  );
+  const getUserName = useCallback(
+    (userId: string | null) =>
+      userId ? dmPeers.find((u) => u.id === userId)?.displayName ?? userId : "None",
+    [dmPeers],
+  );
 
   const updateUrl = useCallback(
     (serverId: string | null, channelId: string | null) => {
@@ -280,6 +296,19 @@ export default function DiscordPage() {
     if (selectedServerId && selectedChannelId)
       updateUrl(selectedServerId, selectedChannelId);
   }, [selectedServerId, selectedChannelId, updateUrl]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_VIEWS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as SavedView[];
+      if (Array.isArray(parsed)) {
+        setSavedViews(parsed);
+      }
+    } catch {
+      setSavedViews([]);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedServerId || channelsForServer.length === 0) {
@@ -450,6 +479,45 @@ export default function DiscordPage() {
     setSelectedChannelId(null);
   }, []);
 
+  const saveViews = useCallback((next: SavedView[]) => {
+    setSavedViews(next);
+    localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(next));
+  }, []);
+
+  const handleSaveCurrentView = useCallback(
+    (name: string) => {
+      const view: SavedView = {
+        id: nextId(),
+        name,
+        createdAt: new Date().toISOString(),
+        viewMode,
+        serverId: viewMode === "servers" ? selectedServerId : null,
+        channelId: viewMode === "servers" ? selectedChannelId : null,
+        userId: viewMode === "dms" ? selectedUserId : null,
+      };
+      saveViews([view, ...savedViews].slice(0, 20));
+    },
+    [viewMode, selectedServerId, selectedChannelId, selectedUserId, savedViews, saveViews],
+  );
+
+  const handleApplySavedView = useCallback((view: SavedView) => {
+    if (view.viewMode === "dms") {
+      setViewMode("dms");
+      setSelectedUserId(view.userId);
+      return;
+    }
+    setViewMode("servers");
+    setSelectedServerId(view.serverId);
+    setSelectedChannelId(view.channelId);
+  }, []);
+
+  const handleDeleteSavedView = useCallback(
+    (id: string) => {
+      saveViews(savedViews.filter((v) => v.id !== id));
+    },
+    [savedViews, saveViews],
+  );
+
   const handleDeleteServer = useCallback(
     (serverId: string) => {
       const nextLocal = localServers.filter((s) => s.id !== serverId);
@@ -569,6 +637,21 @@ export default function DiscordPage() {
 
   return (
     <div className="flex h-screen overflow-hidden" data-testid={dyn.v3.getVariant("discord-page", undefined, "discord-page")}>
+      <SavedViewsPanel
+        currentView={{
+          viewMode,
+          serverId: selectedServerId,
+          channelId: selectedChannelId,
+          userId: selectedUserId,
+        }}
+        views={savedViews}
+        onSaveView={handleSaveCurrentView}
+        onApplyView={handleApplySavedView}
+        onDeleteView={handleDeleteSavedView}
+        resolveServerName={(id) => (id ? getServerName(id) : "None")}
+        resolveChannelName={getChannelName}
+        resolveUserName={getUserName}
+      />
       <ServerList
         servers={allServers}
         selectedId={selectedServerId}
